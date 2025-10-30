@@ -171,18 +171,46 @@ app.get('/api/stats/ai', (req, res) => {
 
 // --- 简单任务队列（内存占位） ---
 let jobs = []; // {id,type,status,createdAt,payload}
+const jobTimers = new Map(); // id -> { toProcessing, toDone }
 const nextId = () => Math.random().toString(36).slice(2, 10)
 const advanceStatus = (st) => st === 'queued' ? 'processing' : (st === 'processing' ? 'done' : 'done')
 
+function scheduleJobTimers(job) {
+  // 2秒后进入 processing，10秒后完成 done
+  const toProcessing = setTimeout(() => {
+    const j = jobs.find(x => x.id === job.id)
+    if (!j || j.status !== 'queued') return
+    j.status = 'processing'
+  }, 2000)
+  const toDone = setTimeout(() => {
+    const j = jobs.find(x => x.id === job.id)
+    if (!j || (j.status === 'done' || j.status === 'canceled')) return
+    j.status = 'done'
+    clearJobTimers(job.id)
+  }, 10000)
+  jobTimers.set(job.id, { toProcessing, toDone })
+}
+
+function clearJobTimers(id) {
+  const timers = jobTimers.get(id)
+  if (timers) {
+    clearTimeout(timers.toProcessing)
+    clearTimeout(timers.toDone)
+    jobTimers.delete(id)
+  }
+}
+
 // 任务API
 app.get('/api/jobs', (req, res) => {
-  res.json(jobs)
+  const sorted = [...jobs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+  res.json(sorted)
 })
 
 app.post('/api/jobs', (req, res) => {
   const { type, payload } = req.body || {}
   const job = { id: nextId(), type, status: 'queued', createdAt: new Date().toISOString(), payload }
   jobs.unshift(job)
+  scheduleJobTimers(job)
   res.status(201).json(job)
 })
 
@@ -190,7 +218,13 @@ app.patch('/api/jobs/:id', (req, res) => {
   const { id } = req.params
   const j = jobs.find(x => x.id === id)
   if (!j) return res.status(404).json({ message: 'not found' })
-  if (req.body?.advance) j.status = advanceStatus(j.status)
+  if (req.body?.cancel) {
+    j.status = 'canceled'
+    clearJobTimers(id)
+  } else if (req.body?.advance) {
+    j.status = advanceStatus(j.status)
+    if (j.status === 'done') clearJobTimers(id)
+  }
   res.json(j)
 })
 

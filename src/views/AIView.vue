@@ -1,11 +1,31 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { jobsApi } from '../api/client'
-import { Message, Tooltip as ATooltip } from '@arco-design/web-vue'
+import { Message } from '@arco-design/web-vue'
+import type { TableColumnData } from '@arco-design/web-vue'
 
 const jobs = ref<any[]>([])
 const loading = ref(false)
-const load = async () => { jobs.value = (await jobsApi.list()).data }
+const apiError = ref<string>('')
+// 与服务端时间的偏移（ms），用于修正浏览器与服务端时钟差导致的进度异常
+const serverOffsetMs = ref(0)
+let timer: any = null
+const load = async () => {
+  try {
+    const res = await jobsApi.list()
+    jobs.value = res.data
+    // 读取响应头的 Date，校准时钟偏移，避免因本地时间与服务端时间不一致导致进度条异常
+    const dateHeader = (res as any)?.headers?.['date'] || (res as any)?.headers?.['Date']
+    if (dateHeader) {
+      const serverNow = new Date(dateHeader).getTime()
+      serverOffsetMs.value = serverNow - Date.now()
+    }
+    apiError.value = ''
+  } catch (e: any) {
+    console.error('[load jobs failed]', e)
+    apiError.value = '无法连接后端服务，请检查后端是否已启动（默认 http://localhost:3001）或端口转发设置。'
+  }
+}
 const enqueue = async (type: string) => {
   try {
     loading.value = true
@@ -15,6 +35,45 @@ const enqueue = async (type: string) => {
   } finally {
     loading.value = false
   }
+}
+
+const cancelJob = async (id: string) => {
+  await jobsApi.cancel(id)
+  Message.info('已取消任务')
+  await load()
+}
+
+const statusColor = (s: string) => s === 'done' ? 'green' : (s === 'processing' ? 'arcoblue' : (s === 'canceled' ? 'red' : 'orange'))
+const statusEmoji = (s: string) => s === 'done' ? '✅' : (s === 'processing' ? '⏳' : (s === 'canceled' ? '✖️' : '🕒'))
+const remainingSeconds = (createdAt: string, status: string) => {
+  if (status === 'done' || status === 'canceled') return 0
+  const start = new Date(createdAt).getTime()
+  const now = Date.now() + serverOffsetMs.value
+  const passed = Math.floor((now - start) / 1000)
+  const total = 10
+  return Math.max(0, total - passed)
+}
+// 进度按两阶段计算：
+// - queued: 0% -> 19%（0~2s）
+// - processing: 20% -> 99%（2~10s），完成为 100%
+const progressPercent = (createdAt: string, status: string) => {
+  const start = new Date(createdAt).getTime()
+  const now = Date.now() + serverOffsetMs.value
+  const elapsed = Math.max(0, (now - start) / 1000)
+  if (status === 'canceled') return 0
+  if (status === 'done') return 100
+  if (status === 'queued') {
+    // 0~2s -> 0~19%
+    const pct = Math.floor(Math.min(19, (elapsed / 2) * 20))
+    return Math.max(0, pct)
+  }
+  if (status === 'processing') {
+    // 2~10s -> 20~99%
+    const procElapsed = Math.max(0, elapsed - 2)
+    const pct = Math.floor(20 + Math.min(79, (procElapsed / 8) * 80))
+    return Math.min(99, Math.max(20, pct))
+  }
+  return 0
 }
 
 type Feature = { key: string; title: string; desc: string; emoji: string; gradient: string; accent: string }
@@ -27,12 +86,31 @@ const features: Feature[] = [
   { key: 'asr', title: '语音识别（ASR）', desc: '音频转写文本（模拟）', emoji: '🎤', gradient: 'from-rose-50 to-pink-50', accent: 'bg-rose-200' },
 ]
 
-onMounted(load)
+// 使用 columns API 定义表格列
+const columns: TableColumnData[] = [
+  { title: '任务ID', dataIndex: 'id' },
+  { title: '类型', dataIndex: 'type' },
+  { title: '状态', slotName: 'status' },
+  { title: '进度', slotName: 'progress' },
+  { title: '剩余(秒)', slotName: 'remain' },
+  { title: '创建时间', dataIndex: 'createdAt' },
+  { title: '操作', slotName: 'actions' },
+]
+
+onMounted(async () => {
+  await load()
+  timer = setInterval(load, 1000)
+})
+onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 </script>
 
 <template>
   <div class="p-6">
     <h2 class="text-2xl font-bold text-slate-800 mb-4">AI 实验室</h2>
+
+    <a-alert v-if="apiError" type="error" :show-icon="true" class="mb-4">
+      {{ apiError }}
+    </a-alert>
 
     <a-grid :cols="24" :col-gap="16" :row-gap="16" class="mb-6">
       <a-grid-item v-for="f in features" :key="f.key" :span="{ xs: 24, sm: 12, md: 12, lg: 8 }">
@@ -57,12 +135,28 @@ onMounted(load)
     </a-grid>
 
     <a-card title="任务队列" :bordered="false" class="shadow-sm">
-      <a-table :data="jobs" :pagination="false" row-key="id">
-        <a-table-column title="任务ID" data-index="id" />
-        <a-table-column title="类型" data-index="type" />
-        <a-table-column title="状态" data-index="status" />
-        <a-table-column title="创建时间" data-index="createdAt" />
-      </a-table>
+      <template v-if="jobs.length > 0">
+        <a-table :data="jobs" :columns="columns" :pagination="false" row-key="id">
+          <template #status="{ record }">
+            <a-space>
+              <span>{{ statusEmoji(record.status) }}</span>
+              <a-tag :color="statusColor(record.status)">{{ record.status }}</a-tag>
+            </a-space>
+          </template>
+          <template #progress="{ record }">
+            <a-progress :percent="progressPercent(record.createdAt, record.status)" :show-text="false" style="width: 140px" />
+          </template>
+          <template #remain="{ record }">
+            {{ remainingSeconds(record.createdAt, record.status) }}
+          </template>
+          <template #actions="{ record }">
+            <a-button v-if="record.status==='queued' || record.status==='processing'" size="mini" status="danger" @click="cancelJob(record.id)">取消</a-button>
+          </template>
+        </a-table>
+      </template>
+      <template v-else>
+        <a-empty description="暂无任务，点击上方任意功能卡片提交任务" />
+      </template>
     </a-card>
   </div>
 </template>
