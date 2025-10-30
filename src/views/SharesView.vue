@@ -2,7 +2,7 @@
 </script>
 
 <template>
-  <div>
+  <div class="p-6">
     <h2 class="text-2xl font-bold text-slate-800 mb-4">共享中心</h2>
     <a-alert type="info" class="mb-4">在“我的文件”点击“分享”复制的链接，可直接对外访问（由后端静态路径 /files 提供）。</a-alert>
     <a-typography>
