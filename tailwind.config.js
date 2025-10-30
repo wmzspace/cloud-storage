@@ -3,7 +3,7 @@
 export default {
   content: [
     "./index.html",
-    "./智能云盘系统原型.vue", 
+    "./src/**/*.{vue,ts,tsx}",
   ],
   theme: {
     extend: {},

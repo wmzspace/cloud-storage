@@ -1,0 +1,8 @@
+@import 'tailwindcss';
+
+/* 自定义基础样式，可按需扩展 */
+:root {
+  --app-bg: #f8fafc; /* slate-50 */
+}
+
+html, body, #root { height: 100%; }
