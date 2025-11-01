@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { filesApi } from '../api/client'
+import { filesApi, sharesApi } from '../api/client'
 import { Message } from '@arco-design/web-vue'
 
 const viewMode = ref<'grid' | 'list'>('grid')
@@ -35,6 +35,8 @@ async function handleDelete(name: string) {
 async function handleShare(name: string) {
   const link = filesApi.shareUrl(name)
   try {
+    // 创建共享记录
+    try { await sharesApi.create(name) } catch (e) { /* 忽略重复创建等异常 */ }
     await navigator.clipboard.writeText(link)
     Message.success('已复制分享链接到剪贴板')
   } catch (e) {

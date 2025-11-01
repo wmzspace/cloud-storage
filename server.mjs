@@ -38,6 +38,7 @@ app.use('/files', express.static(filesDir));
 
 // --- 动态文件元数据与统计 ---
 let mockFiles = []; // 动态加载
+let shares = new Set(); // 共享文件名集合（内存）
 
 const getFileThumbnail = (fileName) => {
   const ext = path.extname(fileName).toLowerCase();
@@ -111,6 +112,39 @@ app.get('/api/files', (req, res) => {
     return res.json(mockFiles.filter(file => file.name.toLowerCase().includes(s)));
   }
   res.json(mockFiles);
+});
+
+// 共享管理 API
+app.get('/api/shares', (req, res) => {
+  loadFilesFromDisk();
+  const list = Array.from(shares).map((name) => {
+    const f = mockFiles.find(x => x.name === name);
+    return {
+      name,
+      size: f?.size || '',
+      date: f?.date || '',
+      thumbnail: f?.thumbnail || '📄',
+      type: f?.type || 'document',
+      url: `${req.protocol}://${req.get('host')}/files/${encodeURIComponent(name)}`,
+    };
+  });
+  res.json(list);
+});
+
+app.post('/api/shares', (req, res) => {
+  const { name } = req.body || {};
+  if (!name) return res.status(400).json({ message: 'name required' });
+  const filePath = path.join(filesDir, name);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'file not found' });
+  shares.add(name);
+  res.status(201).json({ message: 'shared', name });
+});
+
+app.delete('/api/shares/:name', (req, res) => {
+  const { name } = req.params;
+  if (!shares.has(name)) return res.status(404).json({ message: 'not found' });
+  shares.delete(name);
+  res.json({ message: 'unshared', name });
 });
 
 // 最近上传

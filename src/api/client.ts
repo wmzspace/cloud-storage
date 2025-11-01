@@ -56,3 +56,9 @@ export const jobsApi = {
   cancel: (id: string) => api.patch(`/jobs/${id}`, { cancel: true }),
   remove: (id: string) => api.delete(`/jobs/${encodeURIComponent(id)}`),
 }
+
+export const sharesApi = {
+  list: () => api.get('/shares'),
+  create: (name: string) => api.post('/shares', { name }),
+  remove: (name: string) => api.delete(`/shares/${encodeURIComponent(name)}`),
+}
