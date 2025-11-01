@@ -25,7 +25,7 @@ const onClick = (key: string) => router.push(key)
 
     <div class="mt-auto p-4 bg-slate-50 rounded-lg m-3">
       <h3 class="font-semibold text-slate-800 mb-2 text-sm">提示</h3>
-      <p class="text-xs text-slate-500">支持上传/下载/分享；AI 功能通过任务队列模拟。</p>
+      <p class="text-xs text-slate-500">支持上传/下载/分享；<br />AI 功能通过任务队列模拟。</p>
     </div>
   </div>
 

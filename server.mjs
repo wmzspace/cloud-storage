@@ -233,10 +233,10 @@ app.get('/api/stats/ai', (req, res) => {
   const mapping = [
     { type: 'thumbnail', name: '图像缩略图', icon: '🖼️' },
     { type: 'transcode', name: '视频转码', icon: '🎞️' },
-    { type: 'moderation', name: '图片审核', icon: '�️' },
+    { type: 'moderation', name: '图片审核', icon: '🛡️' },
     { type: 'classification', name: '图片分类', icon: '🏷️' },
-    { type: 'ocr', name: '文字提取', icon: '�' },
-    { type: 'asr', name: '语音转文字', icon: '�️' }
+    { type: 'ocr', name: '文字提取', icon: '🔤' },
+    { type: 'asr', name: '语音转文字', icon: '🎤' }
   ]
   const result = mapping.map(m => ({
     name: m.name,
