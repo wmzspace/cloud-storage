@@ -35,8 +35,8 @@ cloud/
 
 ## 开发环境
 
-- Node.js ≥ 18（已在 Node 22 上验证）
-- pnpm ≥ 8
+- Node.js 22
+- pnpm 10
 
 ## 快速开始
 
