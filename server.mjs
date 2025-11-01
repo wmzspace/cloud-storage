@@ -87,7 +87,8 @@ const calcDashboardStats = () => {
   const totalFiles = mockFiles.length;
   const imageFiles = mockFiles.filter(f => f.type === 'image').length;
   const videoFiles = mockFiles.filter(f => f.type === 'video').length;
-  const sharedFiles = 0; // 如需分享标记可扩展
+  // 仅统计当前存在于磁盘的共享文件数量
+  const sharedFiles = Array.from(shares).filter((name) => fs.existsSync(path.join(filesDir, name))).length;
   return { totalFiles, imageFiles, videoFiles, sharedFiles };
 };
 
@@ -175,6 +176,10 @@ app.delete('/api/files/:filename', (req, res) => {
   const filePath = path.join(filesDir, filename);
   if (!fs.existsSync(filePath)) return res.status(404).json({ message: '文件未找到' });
   fs.unlinkSync(filePath);
+  // 若该文件在共享列表中，顺便取消共享
+  if (shares.has(filename)) {
+    shares.delete(filename);
+  }
   loadFilesFromDisk();
   res.status(200).json({ message: '文件删除成功' });
 });
