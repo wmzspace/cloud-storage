@@ -228,6 +228,17 @@ app.patch('/api/jobs/:id', (req, res) => {
   res.json(j)
 })
 
+// 删除任务（支持前端 DELETE）
+app.delete('/api/jobs/:id', (req, res) => {
+  const { id } = req.params
+  const idx = jobs.findIndex(x => x.id === id)
+  if (idx === -1) return res.status(404).json({ message: 'not found' })
+  // 清理定时器并从数组中移除
+  clearJobTimers(id)
+  const removed = jobs.splice(idx, 1)[0]
+  res.json({ message: 'deleted', job: removed })
+})
+
 app.listen(port, () => {
   console.log(`后端服务器正在 http://localhost:${port} 上运行`);
 });

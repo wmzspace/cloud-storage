@@ -45,6 +45,49 @@ const cancelJob = async (id: string) => {
 
 const statusColor = (s: string) => s === 'done' ? 'green' : (s === 'processing' ? 'arcoblue' : (s === 'canceled' ? 'red' : 'orange'))
 const statusEmoji = (s: string) => s === 'done' ? '✅' : (s === 'processing' ? '⏳' : (s === 'canceled' ? '✖️' : '🕒'))
+const statusText = (s: string) => s === 'done' ? '已完成' : (s === 'processing' ? '处理中' : (s === 'canceled' ? '已取消' : (s === 'queued' ? '排队中' : s)))
+
+const formatDate = (iso?: string) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+const deleteJob = async (id: string) => {
+  try {
+    await jobsApi.remove(id)
+    Message.success('已删除任务')
+    await load()
+  } catch (e: any) {
+    console.error('[delete job failed]', e)
+    const status = e?.response?.status
+    if (status === 404) {
+      // 后端未实现 DELETE /jobs/:id，回退为取消任务并提示用户
+      try {
+        await jobsApi.update(id, { cancel: true })
+        Message.info('后端不支持删除接口，已将任务标记为已取消')
+        await load()
+        return
+      } catch (err2) {
+        console.error('[fallback cancel failed]', err2)
+      }
+    }
+    Message.error('删除任务失败')
+  }
+}
+
+const typeText = (t: string) => {
+  const m: Record<string, string> = {
+    thumbnail: '图像缩略图',
+    transcode: '视频转码',
+    moderation: '图片审核',
+    classification: '图片分类',
+    ocr: '图片文字识别',
+    asr: '语音识别',
+  }
+  return m[t] || t
+}
 const remainingSeconds = (createdAt: string, status: string) => {
   if (status === 'done' || status === 'canceled') return 0
   const start = new Date(createdAt).getTime()
@@ -65,13 +108,13 @@ const progressPercent = (createdAt: string, status: string) => {
   if (status === 'queued') {
     // 0~2s -> 0~19%
     const pct = Math.floor(Math.min(19, (elapsed / 2) * 20))
-    return Math.max(0, pct)
+    return Math.max(0, pct / 100)
   }
   if (status === 'processing') {
     // 2~10s -> 20~99%
     const procElapsed = Math.max(0, elapsed - 2)
     const pct = Math.floor(20 + Math.min(79, (procElapsed / 8) * 80))
-    return Math.min(99, Math.max(20, pct))
+    return Math.min(0.99, Math.max(0.2, pct / 100))
   }
   return 0
 }
@@ -88,13 +131,13 @@ const features: Feature[] = [
 
 // 使用 columns API 定义表格列
 const columns: TableColumnData[] = [
-  { title: '任务ID', dataIndex: 'id' },
-  { title: '类型', dataIndex: 'type' },
-  { title: '状态', slotName: 'status' },
-  { title: '进度', slotName: 'progress' },
-  { title: '剩余(秒)', slotName: 'remain' },
-  { title: '创建时间', dataIndex: 'createdAt' },
-  { title: '操作', slotName: 'actions' },
+  { title: '任务ID', dataIndex: 'id', align: 'center', titleAlign: 'center' },
+  { title: '类型', dataIndex: 'type', slotName: 'type', align: 'center', titleAlign: 'center' },
+  { title: '状态', slotName: 'status', align: 'center', titleAlign: 'center' },
+  { title: '进度', slotName: 'progress', align: 'center', titleAlign: 'center' },
+  // { title: '剩余(秒)', slotName: 'remain' },
+  { title: '创建时间', dataIndex: 'createdAt', slotName: 'createdAt', align: 'center', titleAlign: 'center' },
+  { title: '操作', slotName: 'actions', align: 'center', titleAlign: 'center' },
 ]
 
 onMounted(async () => {
@@ -114,20 +157,24 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
     <a-grid :cols="24" :col-gap="16" :row-gap="16" class="mb-6">
       <a-grid-item v-for="f in features" :key="f.key" :span="{ xs: 24, sm: 12, md: 12, lg: 8 }">
-        <a-card :bordered="false" class="group relative shadow-sm hover:shadow-xl transition-all h-full overflow-hidden">
+        <a-card :bordered="false"
+          class="group relative shadow-sm hover:shadow-xl transition-all h-full overflow-hidden">
           <div :class="['absolute inset-0 opacity-70 pointer-events-none bg-gradient-to-br', f.gradient]"></div>
           <div class="relative flex items-start justify-between">
             <div class="flex items-start">
-              <div class="w-11 h-11 rounded-xl mr-3 flex items-center justify-center ring-4 ring-white shadow-sm" :class="f.accent">
+              <div class="w-11 h-11 rounded-xl mr-3 flex items-center justify-center ring-4 ring-white shadow-sm"
+                :class="f.accent">
                 <span class="text-xl">{{ f.emoji }}</span>
               </div>
               <div>
-                <div class="font-semibold text-slate-800 group-hover:translate-x-0.5 transition-transform">{{ f.title }}</div>
+                <div class="font-semibold text-slate-800 group-hover:translate-x-0.5 transition-transform">{{ f.title }}
+                </div>
                 <div class="text-xs text-slate-500 mt-1">{{ f.desc }}</div>
               </div>
             </div>
             <a-tooltip content="加入任务队列（模拟处理）">
-              <a-button type="primary" size="small" :loading="loading" class="transition-transform group-hover:scale-[1.02]" @click="enqueue(f.key)">提交任务</a-button>
+              <a-button type="primary" size="small" :loading="loading"
+                class="transition-transform group-hover:scale-[1.02]" @click="enqueue(f.key)">提交任务</a-button>
             </a-tooltip>
           </div>
         </a-card>
@@ -140,17 +187,29 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
           <template #status="{ record }">
             <a-space>
               <span>{{ statusEmoji(record.status) }}</span>
-              <a-tag :color="statusColor(record.status)">{{ record.status }}</a-tag>
+              <a-tag :color="statusColor(record.status)">{{ statusText(record.status) }}</a-tag>
             </a-space>
           </template>
           <template #progress="{ record }">
-            <a-progress :percent="progressPercent(record.createdAt, record.status)" :show-text="false" style="width: 140px" />
+            <a-progress :percent="progressPercent(record.createdAt, record.status)" :show-text="false"
+              style="width: 140px" />
+          </template>
+          <template #createdAt="{ record }">
+            {{ formatDate(record.createdAt) }}
+          </template>
+          <template #type="{ record }">
+            {{ typeText(record.type) }}
           </template>
           <template #remain="{ record }">
             {{ remainingSeconds(record.createdAt, record.status) }}
           </template>
           <template #actions="{ record }">
-            <a-button v-if="record.status==='queued' || record.status==='processing'" size="mini" status="danger" @click="cancelJob(record.id)">取消</a-button>
+            <a-space>
+              <a-button v-if="record.status === 'queued' || record.status === 'processing'" size="mini" status="danger"
+                @click="cancelJob(record.id)">取消</a-button>
+              <a-button v-else size="mini" type="text" status="danger" title="删除"
+                @click="deleteJob(record.id)">🗑️</a-button>
+            </a-space>
           </template>
         </a-table>
       </template>

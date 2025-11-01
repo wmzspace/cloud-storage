@@ -54,4 +54,5 @@ export const jobsApi = {
   create: (type: string, payload: any) => api.post('/jobs', { type, payload }),
   update: (id: string, patch: any) => api.patch(`/jobs/${id}`, patch),
   cancel: (id: string) => api.patch(`/jobs/${id}`, { cancel: true }),
+  remove: (id: string) => api.delete(`/jobs/${encodeURIComponent(id)}`),
 }
