@@ -12,6 +12,10 @@ const port = 3001;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const filesDir = path.join(__dirname, 'files');
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir);
+const jobsFile = path.join(dataDir, 'jobs.json');
+const sharesFile = path.join(dataDir, 'shares.json');
 
 // 确保 files 目录存在
 if (!fs.existsSync(filesDir)) {
@@ -38,7 +42,7 @@ app.use('/files', express.static(filesDir));
 
 // --- 动态文件元数据与统计 ---
 let mockFiles = []; // 动态加载
-let shares = new Set(); // 共享文件名集合（内存）
+let shares = new Set(); // 共享文件名集合（持久化于 data/shares.json）
 
 const getFileThumbnail = (fileName) => {
   const ext = path.extname(fileName).toLowerCase();
@@ -83,6 +87,29 @@ const loadFilesFromDisk = () => {
   }
 };
 
+// --- 共享/任务 持久化 ---
+const loadSharesFromStore = () => {
+  try {
+    if (fs.existsSync(sharesFile)) {
+      const raw = fs.readFileSync(sharesFile, 'utf-8')
+      const arr = JSON.parse(raw)
+      shares = new Set(Array.isArray(arr) ? arr : [])
+    } else {
+      shares = new Set()
+    }
+  } catch (e) {
+    console.warn('加载共享列表失败，使用空集合', e)
+    shares = new Set()
+  }
+}
+const saveSharesToStore = () => {
+  try {
+    fs.writeFileSync(sharesFile, JSON.stringify(Array.from(shares), null, 2))
+  } catch (e) {
+    console.warn('保存共享列表失败', e)
+  }
+}
+
 const calcDashboardStats = () => {
   const totalFiles = mockFiles.length;
   const imageFiles = mockFiles.filter(f => f.type === 'image').length;
@@ -101,6 +128,8 @@ const calcStorage = () => {
 };
 
 loadFilesFromDisk();
+loadSharesFromStore();
+// 注意：加载任务必须在 jobs 变量初始化后再调用，调用位置已下移
 
 // --- API 端点 ---
 
@@ -138,6 +167,7 @@ app.post('/api/shares', (req, res) => {
   const filePath = path.join(filesDir, name);
   if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'file not found' });
   shares.add(name);
+  saveSharesToStore();
   res.status(201).json({ message: 'shared', name });
 });
 
@@ -145,6 +175,7 @@ app.delete('/api/shares/:name', (req, res) => {
   const { name } = req.params;
   if (!shares.has(name)) return res.status(404).json({ message: 'not found' });
   shares.delete(name);
+  saveSharesToStore();
   res.json({ message: 'unshared', name });
 });
 
@@ -179,6 +210,7 @@ app.delete('/api/files/:filename', (req, res) => {
   // 若该文件在共享列表中，顺便取消共享
   if (shares.has(filename)) {
     shares.delete(filename);
+    saveSharesToStore();
   }
   loadFilesFromDisk();
   res.status(200).json({ message: '文件删除成功' });
@@ -215,7 +247,7 @@ app.get('/api/stats/ai', (req, res) => {
 });
 
 // --- 简单任务队列（内存占位） ---
-let jobs = []; // {id,type,status,createdAt,payload}
+let jobs = []; // {id,type,status,createdAt,payload}（持久化于 data/jobs.json）
 const jobTimers = new Map(); // id -> { toProcessing, toDone }
 const nextId = () => Math.random().toString(36).slice(2, 10)
 const advanceStatus = (st) => st === 'queued' ? 'processing' : (st === 'processing' ? 'done' : 'done')
@@ -226,12 +258,14 @@ function scheduleJobTimers(job) {
     const j = jobs.find(x => x.id === job.id)
     if (!j || j.status !== 'queued') return
     j.status = 'processing'
+    saveJobsToStore()
   }, 2000)
   const toDone = setTimeout(() => {
     const j = jobs.find(x => x.id === job.id)
     if (!j || (j.status === 'done' || j.status === 'canceled')) return
     j.status = 'done'
     clearJobTimers(job.id)
+    saveJobsToStore()
   }, 10000)
   jobTimers.set(job.id, { toProcessing, toDone })
 }
@@ -245,6 +279,74 @@ function clearJobTimers(id) {
   }
 }
 
+function saveJobsToStore() {
+  try {
+    fs.writeFileSync(jobsFile, JSON.stringify(jobs, null, 2))
+  } catch (e) {
+    console.warn('保存任务列表失败', e)
+  }
+}
+
+function loadJobsFromStoreAndRecover() {
+  try {
+    if (fs.existsSync(jobsFile)) {
+      const raw = fs.readFileSync(jobsFile, 'utf-8')
+      const arr = JSON.parse(raw)
+      jobs = Array.isArray(arr) ? arr : []
+    } else {
+      jobs = []
+    }
+  } catch (e) {
+    console.warn('加载任务列表失败，使用空列表', e)
+    jobs = []
+  }
+
+  // 恢复计时器/状态：根据 createdAt 与当前时间推断
+  const now = Date.now()
+  for (const j of jobs) {
+    if (j.status === 'done' || j.status === 'canceled') { clearJobTimers(j.id); continue }
+    const t0 = new Date(j.createdAt).getTime()
+    const elapsed = (now - t0) / 1000
+    if (elapsed >= 10) {
+      j.status = 'done'
+      clearJobTimers(j.id)
+    } else if (elapsed >= 2) {
+      j.status = 'processing'
+      const toDoneMs = Math.max(0, (10 - elapsed) * 1000)
+      const toDone = setTimeout(() => {
+        const jj = jobs.find(x => x.id === j.id)
+        if (!jj || jj.status === 'done' || jj.status === 'canceled') return
+        jj.status = 'done'
+        clearJobTimers(j.id)
+        saveJobsToStore()
+      }, toDoneMs)
+      jobTimers.set(j.id, { toProcessing: setTimeout(() => { }, 0), toDone })
+    } else {
+      const toProcMs = Math.max(0, (2 - elapsed) * 1000)
+      const toDoneMs = Math.max(0, (10 - elapsed) * 1000)
+      const toProcessing = setTimeout(() => {
+        const jj = jobs.find(x => x.id === j.id)
+        if (!jj || jj.status !== 'queued') return
+        jj.status = 'processing'
+        saveJobsToStore()
+      }, toProcMs)
+      const toDone = setTimeout(() => {
+        const jj = jobs.find(x => x.id === j.id)
+        if (!jj || jj.status === 'done' || jj.status === 'canceled') return
+        jj.status = 'done'
+        clearJobTimers(j.id)
+        saveJobsToStore()
+      }, toDoneMs)
+      jobTimers.set(j.id, { toProcessing, toDone })
+    }
+  }
+  // 保存一次可能的状态修正
+  saveJobsToStore()
+}
+
+// 初始化加载已持久化的任务并恢复调度
+loadJobsFromStoreAndRecover();
+
 // 任务API
 app.get('/api/jobs', (req, res) => {
   const sorted = [...jobs].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -256,6 +358,7 @@ app.post('/api/jobs', (req, res) => {
   const job = { id: nextId(), type, status: 'queued', createdAt: new Date().toISOString(), payload }
   jobs.unshift(job)
   scheduleJobTimers(job)
+  saveJobsToStore()
   res.status(201).json(job)
 })
 
@@ -270,6 +373,7 @@ app.patch('/api/jobs/:id', (req, res) => {
     j.status = advanceStatus(j.status)
     if (j.status === 'done') clearJobTimers(id)
   }
+  saveJobsToStore()
   res.json(j)
 })
 
@@ -281,6 +385,7 @@ app.delete('/api/jobs/:id', (req, res) => {
   // 清理定时器并从数组中移除
   clearJobTimers(id)
   const removed = jobs.splice(idx, 1)[0]
+  saveJobsToStore()
   res.json({ message: 'deleted', job: removed })
 })
 

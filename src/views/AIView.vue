@@ -26,43 +26,43 @@ const load = async () => {
     apiError.value = '无法连接后端服务，请检查后端是否已启动（默认 http://localhost:3001）或端口转发设置。'
   }
 }
-// 选择文件并提交任务
-const picker = ref<HTMLInputElement | null>(null)
-const pickerAccept = ref('')
-const pendingType = ref<string | null>(null)
-const acceptMap: Record<string, string> = {
-  thumbnail: 'image/*',
-  moderation: 'image/*',
-  classification: 'image/*',
-  ocr: 'image/*',
-  transcode: 'video/*',
-  asr: 'audio/*',
+// 从云盘选择文件并提交任务（不上传新文件）
+const selectVisible = ref(false)
+const selectType = ref<string>('')
+const selectLoading = ref(false)
+const fileQuery = ref('')
+const allFiles = ref<any[]>([])
+const typeToFileType: Record<string, string> = {
+  thumbnail: 'image', moderation: 'image', classification: 'image', ocr: 'image', transcode: 'video', asr: 'audio'
 }
-const chooseAndEnqueue = (type: string) => {
-  pendingType.value = type
-  pickerAccept.value = acceptMap[type] || '*/*'
-  picker.value?.click()
+const selectableFiles = computed(() => {
+  const needType = typeToFileType[selectType.value]
+  const q = (fileQuery.value || '').toLowerCase()
+  return allFiles.value.filter(f => (!needType || f.type === needType) && (!q || String(f.name).toLowerCase().includes(q)))
+})
+const openSelect = async (type: string) => {
+  selectType.value = type
+  selectVisible.value = true
+  selectLoading.value = true
+  try {
+    const res = await filesApi.list()
+    allFiles.value = res.data || []
+  } finally {
+    selectLoading.value = false
+  }
 }
-
-const onPickFile = async (e: Event) => {
-  const input = e.target as HTMLInputElement
-  const f = input.files?.[0]
-  if (!f || !pendingType.value) { if (input) input.value = ''; return }
+const selectedName = ref<string>('')
+const confirmSelect = async () => {
+  if (!selectedName.value) { Message.warning('请选择一个文件'); return }
   try {
     loading.value = true
-    const uploadRes = await filesApi.upload(f)
-    const saved = (uploadRes as any)?.data?.file || {}
-    const savedName = saved?.filename || saved?.originalname || f.name
-    await jobsApi.create(pendingType.value, { note: 'demo', fileName: savedName, originalName: f.name })
-    Message.success('已上传并加入队列')
+    await jobsApi.create(selectType.value, { note: 'demo', fileName: selectedName.value, originalName: selectedName.value })
+    Message.success('已加入队列')
+    selectVisible.value = false
+    selectedName.value = ''
     await load()
-  } catch (err) {
-    console.error('[enqueue with file failed]', err)
-    Message.error('提交任务失败，请重试')
   } finally {
     loading.value = false
-    if (input) input.value = ''
-    pendingType.value = null
   }
 }
 
@@ -276,17 +276,36 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
                 <div class="text-xs text-slate-500 mt-1">{{ f.desc }}</div>
               </div>
             </div>
-            <a-tooltip content="选择合适的文件并加入任务队列（模拟处理）">
+            <a-tooltip content="从云盘选择合适的文件并加入队列（不上传新文件）">
               <a-button type="primary" size="small" :loading="loading"
-                class="transition-transform group-hover:scale-[1.02]" @click="chooseAndEnqueue(f.key)">提交任务</a-button>
+                class="transition-transform group-hover:scale-[1.02]" @click="openSelect(f.key)">提交任务</a-button>
             </a-tooltip>
           </div>
         </a-card>
       </a-grid-item>
     </a-grid>
 
-    <!-- 隐藏文件选择器：根据任务类型限制可选类型 -->
-    <input ref="picker" type="file" class="hidden" :accept="pickerAccept" @change="onPickFile" />
+    <!-- 选择云盘文件弹窗 -->
+    <!-- 移除阻止确认的 on-before-ok（之前总是返回 false 导致确认按钮无反应） -->
+    <a-modal :visible="selectVisible" @ok="confirmSelect" @cancel="() => { selectVisible = false; selectedName = '' }"
+      :title="`选择文件 - ${typeText(selectType)}`">
+      <div class="mb-3 flex items-center">
+        <a-input v-model="fileQuery" placeholder="搜索文件名..." allow-clear style="width: 280px" />
+        <span class="text-xs text-slate-500 ml-2">类型限制：{{ typeToFileType[selectType] || '不限' }}</span>
+      </div>
+      <!-- 高亮已选行，简化样式使弹窗更整洁 -->
+      <a-table :loading="selectLoading" :data="selectableFiles" row-key="name" :pagination="false" :columns="[
+        { title: '名称', dataIndex: 'name' },
+        { title: '类型', dataIndex: 'type' },
+        { title: '大小', dataIndex: 'size' },
+        { title: '时间', dataIndex: 'date' },
+        { title: '选择', slotName: 'pick', width: 100, align: 'center' }
+      ]" :row-class-name="(record: any) => record.name === selectedName ? 'bg-selected-row' : ''">
+        <template #pick="{ record }">
+          <a-radio v-model="selectedName" :value="record.name">选择</a-radio>
+        </template>
+      </a-table>
+    </a-modal>
 
     <a-card title="任务队列" :bordered="false" class="shadow-sm">
       <template v-if="jobs.length > 0">
@@ -421,4 +440,9 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+.bg-selected-row {
+  background-color: #f8fafc;
+  /* 轻微灰蓝提高对比 */
+}
+</style>
