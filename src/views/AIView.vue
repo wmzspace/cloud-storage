@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
-import { jobsApi } from '../api/client'
+import { jobsApi, filesApi } from '../api/client'
 import { Message } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
 
@@ -26,14 +26,43 @@ const load = async () => {
     apiError.value = '无法连接后端服务，请检查后端是否已启动（默认 http://localhost:3001）或端口转发设置。'
   }
 }
-const enqueue = async (type: string) => {
+// 选择文件并提交任务
+const picker = ref<HTMLInputElement | null>(null)
+const pickerAccept = ref('')
+const pendingType = ref<string | null>(null)
+const acceptMap: Record<string, string> = {
+  thumbnail: 'image/*',
+  moderation: 'image/*',
+  classification: 'image/*',
+  ocr: 'image/*',
+  transcode: 'video/*',
+  asr: 'audio/*',
+}
+const chooseAndEnqueue = (type: string) => {
+  pendingType.value = type
+  pickerAccept.value = acceptMap[type] || '*/*'
+  picker.value?.click()
+}
+
+const onPickFile = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const f = input.files?.[0]
+  if (!f || !pendingType.value) { if (input) input.value = ''; return }
   try {
     loading.value = true
-    await jobsApi.create(type, { note: 'demo' })
-    Message.success('已加入队列')
+    const uploadRes = await filesApi.upload(f)
+    const saved = (uploadRes as any)?.data?.file || {}
+    const savedName = saved?.filename || saved?.originalname || f.name
+    await jobsApi.create(pendingType.value, { note: 'demo', fileName: savedName, originalName: f.name })
+    Message.success('已上传并加入队列')
     await load()
+  } catch (err) {
+    console.error('[enqueue with file failed]', err)
+    Message.error('提交任务失败，请重试')
   } finally {
     loading.value = false
+    if (input) input.value = ''
+    pendingType.value = null
   }
 }
 
@@ -247,14 +276,17 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
                 <div class="text-xs text-slate-500 mt-1">{{ f.desc }}</div>
               </div>
             </div>
-            <a-tooltip content="加入任务队列（模拟处理）">
+            <a-tooltip content="选择合适的文件并加入任务队列（模拟处理）">
               <a-button type="primary" size="small" :loading="loading"
-                class="transition-transform group-hover:scale-[1.02]" @click="enqueue(f.key)">提交任务</a-button>
+                class="transition-transform group-hover:scale-[1.02]" @click="chooseAndEnqueue(f.key)">提交任务</a-button>
             </a-tooltip>
           </div>
         </a-card>
       </a-grid-item>
     </a-grid>
+
+    <!-- 隐藏文件选择器：根据任务类型限制可选类型 -->
+    <input ref="picker" type="file" class="hidden" :accept="pickerAccept" @change="onPickFile" />
 
     <a-card title="任务队列" :bordered="false" class="shadow-sm">
       <template v-if="jobs.length > 0">
@@ -312,6 +344,12 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
           <div><span class="text-slate-500">类型：</span>{{ typeText(resultJob.type) }}</div>
           <div><span class="text-slate-500">状态：</span>{{ statusText(resultJob.status) }}</div>
           <div><span class="text-slate-500">创建时间：</span>{{ formatDate(resultJob.createdAt) }}</div>
+          <div v-if="resultJob.payload?.fileName" class="col-span-2">
+            <span class="text-slate-500">源文件：</span>
+            <a-link :href="filesApi.shareUrl(resultJob.payload.fileName)" target="_blank">
+              {{ resultJob.payload.originalName || resultJob.payload.fileName }}
+            </a-link>
+          </div>
         </div>
         <a-alert v-if="resultData.summary" type="info" :show-icon="true">{{ resultData.summary }}</a-alert>
 
@@ -359,7 +397,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
           <a-space wrap>
             <a-tag v-for="c in resultData.labels" :key="c.name" color="arcoblue">{{ c.name }} {{ Math.round(c.score *
               100)
-              }}%</a-tag>
+            }}%</a-tag>
           </a-space>
         </div>
 

@@ -73,10 +73,11 @@ watch(() => route.query.q, (nv) => {
   <div class="p-6">
     <div class="flex items-center justify-between mb-6">
       <h2 class="text-2xl font-bold text-slate-800">我的文件</h2>
-      <div class="flex items-center space-x-3">
+      <div class="flex items-center flex-wrap justify-end gap-2 md:gap-3">
         <input ref="fileInput" type="file" class="hidden" @change="handleUploadChange" />
         <a-button type="primary" :loading="uploading" @click="fileInput?.click()">上传文件</a-button>
-        <a-radio-group v-model="viewMode" type="button">
+        <div class="h-6 w-px bg-slate-200 mx-1 md:mx-2"></div>
+        <a-radio-group v-model="viewMode" type="button" class="ml-1 md:ml-2">
           <a-radio value="grid">网格</a-radio>
           <a-radio value="list">列表</a-radio>
         </a-radio-group>

@@ -26,10 +26,12 @@ const goFiles = () => router.push({ path: '/my-files', query: { q: q.value } })
       <a-button type="primary" @click="triggerUpload"><template #icon><icon-upload /></template>上传</a-button>
       <input ref="picker" type="file" class="hidden" @change="onPick">
     </div>
-    <div class="flex items-center space-x-2">
-      <a-button shape="circle"><icon-notification /></a-button>
-      <a-avatar :size="24"><icon-user /></a-avatar>
-    </div>
+    <a-space :size="12" align="center">
+      <a-button shape="circle" type="text" class="hover:bg-slate-100 rounded-full">
+        <icon-notification />
+      </a-button>
+      <a-avatar :size="28" class="ring-1 ring-slate-200"><icon-user /></a-avatar>
+    </a-space>
   </div>
 </template>
 
