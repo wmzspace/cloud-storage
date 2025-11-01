@@ -2,8 +2,9 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { filesApi } from '../api/client'
+import { Message } from '@arco-design/web-vue'
 
-const viewMode = ref<'grid'|'list'>('grid')
+const viewMode = ref<'grid' | 'list'>('grid')
 const files = ref<any[]>([])
 const uploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -33,7 +34,13 @@ async function handleDelete(name: string) {
 
 async function handleShare(name: string) {
   const link = filesApi.shareUrl(name)
-  await navigator.clipboard.writeText(link)
+  try {
+    await navigator.clipboard.writeText(link)
+    Message.success('已复制分享链接到剪贴板')
+  } catch (e) {
+    console.warn('复制到剪贴板失败，尝试弹窗显示', e)
+    window.prompt('复制以下分享链接', link)
+  }
 }
 
 async function handleUploadChange(e: Event) {
@@ -42,7 +49,7 @@ async function handleUploadChange(e: Event) {
   if (!f) return
   try {
     uploading.value = true
-  await filesApi.upload(f)
+    await filesApi.upload(f)
     await load()
   } finally {
     uploading.value = false
@@ -74,7 +81,7 @@ watch(() => route.query.q, (nv) => {
       </div>
     </div>
 
-    <a-grid v-if="viewMode==='grid'" :cols="24" :col-gap="24" :row-gap="24">
+    <a-grid v-if="viewMode === 'grid'" :cols="24" :col-gap="24" :row-gap="24">
       <a-grid-item v-for="file in files" :key="file.id" :span="6">
         <a-card :bordered="false" class="shadow-sm hover:shadow-lg transition-all group h-full">
           <div class="flex flex-col h-full">
@@ -127,5 +134,4 @@ watch(() => route.query.q, (nv) => {
   </div>
 </template>
 
-<style scoped>
-</style>
+<style scoped></style>

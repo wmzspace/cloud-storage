@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { jobsApi } from '../api/client'
 import { Message } from '@arco-design/web-vue'
 import type { TableColumnData } from '@arco-design/web-vue'
@@ -88,6 +88,74 @@ const typeText = (t: string) => {
   }
   return m[t] || t
 }
+
+// 结果查看 UI 的状态与模拟数据
+const resultVisible = ref(false)
+const resultJob = ref<any | null>(null)
+const resultData = ref<any | null>(null)
+
+const getMockResult = (job: any) => {
+  const common = {
+    id: job.id,
+    type: job.type,
+    createdAt: job.createdAt,
+    summary: ''
+  }
+  switch (job.type) {
+    case 'thumbnail':
+      return { ...common, summary: '已为该图像生成 3 个尺寸的预览图。', previews: ['200x200', '400x300', '800x600'] }
+    case 'transcode':
+      return {
+        ...common,
+        summary: '已完成多码率转码，可用于自适应播放。',
+        outputs: [
+          { format: 'H.264', resolution: '1080p', size: '20MB' },
+          { format: 'H.264', resolution: '720p', size: '12MB' },
+          { format: 'H.265', resolution: '480p', size: '6MB' }
+        ]
+      }
+    case 'moderation':
+      return {
+        ...common,
+        summary: '未检测到高风险违规项，建议人工抽检复核。',
+        flags: [
+          { label: '暴力', score: 0.08 },
+          { label: '色情', score: 0.03 },
+          { label: '政治敏感', score: 0.12 }
+        ]
+      }
+    case 'classification':
+      return {
+        ...common,
+        summary: '识别出多个候选标签，按置信度排序。',
+        labels: [
+          { name: '风景', score: 0.92 },
+          { name: '城市', score: 0.63 },
+          { name: '人物', score: 0.28 }
+        ]
+      }
+    case 'ocr':
+      return {
+        ...common,
+        summary: '已提取出清晰文本，可复制用于搜索与编辑。',
+        text: `示例文本：\n这是一段 OCR 识别的结果示例。\n支持多行文本，包含中英文、数字等。\nOCR (Optical Character Recognition) 可以将图片中的文字提取为可编辑文本。`
+      }
+    case 'asr':
+      return {
+        ...common,
+        summary: '已完成音频转写，并做了基础标点优化。',
+        text: `示例转写：\n大家好，欢迎来到 AI 实验室。本次演示介绍语音识别如何将音频转为文本，并用于检索与摘要。`
+      }
+    default:
+      return { ...common, summary: '暂无可视化结果。' }
+  }
+}
+
+const openResult = (job: any) => {
+  resultJob.value = { ...job }
+  resultData.value = getMockResult(job)
+  resultVisible.value = true
+}
 const remainingSeconds = (createdAt: string, status: string) => {
   if (status === 'done' || status === 'canceled') return 0
   const start = new Date(createdAt).getTime()
@@ -130,8 +198,15 @@ const features: Feature[] = [
 ]
 
 // 使用 columns API 定义表格列
+const page = ref(1)
+const pageSize = ref(10)
+const pagedJobs = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return jobs.value.slice(start, start + pageSize.value)
+})
+
 const columns: TableColumnData[] = [
-  { title: '任务ID', dataIndex: 'id', align: 'center', titleAlign: 'center' },
+  { title: '任务ID', dataIndex: 'id', slotName: 'id', align: 'center', titleAlign: 'center' },
   { title: '类型', dataIndex: 'type', slotName: 'type', align: 'center', titleAlign: 'center' },
   { title: '状态', slotName: 'status', align: 'center', titleAlign: 'center' },
   { title: '进度', slotName: 'progress', align: 'center', titleAlign: 'center' },
@@ -183,7 +258,18 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 
     <a-card title="任务队列" :bordered="false" class="shadow-sm">
       <template v-if="jobs.length > 0">
-        <a-table :data="jobs" :columns="columns" :pagination="false" row-key="id">
+        <a-table :data="pagedJobs" :columns="columns"
+          :pagination="{ total: jobs.length, current: page, pageSize: pageSize, showTotal: true, showPageSize: true, size: 'small' }"
+          @page-change="(p: number) => page = p" @page-size-change="(ps: number) => { pageSize = ps; page = 1 }"
+          row-key="id">
+          <template #id="{ record }">
+            <template v-if="record.status === 'done'">
+              <a-link status="success" @click="openResult(record)">{{ record.id }}</a-link>
+            </template>
+            <template v-else>
+              <span class="text-slate-400">{{ record.id }}</span>
+            </template>
+          </template>
           <template #status="{ record }">
             <a-space>
               <span>{{ statusEmoji(record.status) }}</span>
@@ -217,6 +303,83 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
         <a-empty description="暂无任务，点击上方任意功能卡片提交任务" />
       </template>
     </a-card>
+
+    <!-- 任务结果抽屉 -->
+    <a-drawer v-model:visible="resultVisible" :width="680" title="任务结果">
+      <div v-if="resultJob && resultData" class="space-y-4">
+        <div class="grid grid-cols-2 gap-2 text-sm">
+          <div><span class="text-slate-500">任务ID：</span><span class="font-mono">{{ resultJob.id }}</span></div>
+          <div><span class="text-slate-500">类型：</span>{{ typeText(resultJob.type) }}</div>
+          <div><span class="text-slate-500">状态：</span>{{ statusText(resultJob.status) }}</div>
+          <div><span class="text-slate-500">创建时间：</span>{{ formatDate(resultJob.createdAt) }}</div>
+        </div>
+        <a-alert v-if="resultData.summary" type="info" :show-icon="true">{{ resultData.summary }}</a-alert>
+
+        <!-- 按类型展示模拟结果 -->
+        <div v-if="resultJob.type === 'thumbnail'">
+          <div class="text-slate-600 mb-2">生成的预览尺寸：</div>
+          <a-space wrap>
+            <a-tag v-for="p in resultData.previews" :key="p" color="arcoblue">{{ p }}</a-tag>
+          </a-space>
+          <div class="mt-3 grid grid-cols-3 gap-3">
+            <div v-for="p in resultData.previews" :key="'box-' + p"
+              class="h-20 rounded-md bg-slate-100 flex items-center justify-center text-xs text-slate-500">预览 {{ p }}
+            </div>
+          </div>
+        </div>
+
+        <div v-else-if="resultJob.type === 'transcode'">
+          <div class="text-slate-600 mb-2">输出格式：</div>
+          <a-list :bordered="false">
+            <a-list-item v-for="o in resultData.outputs" :key="o.format + o.resolution">
+              <a-space>
+                <a-tag>{{ o.format }}</a-tag>
+                <a-tag color="green">{{ o.resolution }}</a-tag>
+                <span class="text-slate-500">大小约 {{ o.size }}</span>
+              </a-space>
+            </a-list-item>
+          </a-list>
+        </div>
+
+        <div v-else-if="resultJob.type === 'moderation'">
+          <div class="text-slate-600 mb-2">审核结果：</div>
+          <a-alert type="success" class="mb-2">未发现明显违规内容</a-alert>
+          <a-list :bordered="false">
+            <a-list-item v-for="f in resultData.flags" :key="f.label">
+              <a-space>
+                <a-tag :color="f.score > 0.6 ? 'red' : (f.score > 0.3 ? 'orange' : 'green')">{{ f.label }}</a-tag>
+                <span class="text-slate-500">置信度 {{ Math.round(f.score * 100) }}%</span>
+              </a-space>
+            </a-list-item>
+          </a-list>
+        </div>
+
+        <div v-else-if="resultJob.type === 'classification'">
+          <div class="text-slate-600 mb-2">识别标签：</div>
+          <a-space wrap>
+            <a-tag v-for="c in resultData.labels" :key="c.name" color="arcoblue">{{ c.name }} {{ Math.round(c.score *
+              100)
+              }}%</a-tag>
+          </a-space>
+        </div>
+
+        <div v-else-if="resultJob.type === 'ocr'">
+          <div class="text-slate-600 mb-2">识别文本：</div>
+          <a-typography-paragraph copyable :ellipsis="{ rows: 6 }">{{ resultData.text }}</a-typography-paragraph>
+          <a-textarea :model-value="resultData.text" :auto-size="{ minRows: 4, maxRows: 10 }" readonly />
+        </div>
+
+        <div v-else-if="resultJob.type === 'asr'">
+          <div class="text-slate-600 mb-2">转写文本：</div>
+          <a-typography-paragraph copyable :ellipsis="{ rows: 6 }">{{ resultData.text }}</a-typography-paragraph>
+          <a-textarea :model-value="resultData.text" :auto-size="{ minRows: 4, maxRows: 10 }" readonly />
+        </div>
+
+        <div v-else>
+          <a-empty description="暂无结果展示" />
+        </div>
+      </div>
+    </a-drawer>
   </div>
 </template>
 

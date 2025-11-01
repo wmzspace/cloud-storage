@@ -17,9 +17,9 @@ const onClick = (key: string) => router.push(key)
     <div class="p-3">
       <a-menu :selected-keys="[active]" :style="{ width: '100%', border: 'none' }" @menu-item-click="onClick">
         <a-menu-item key="/"><template #icon><icon-apps /></template>仪表盘</a-menu-item>
-        <a-menu-item key="/files"><template #icon><icon-folder /></template>我的文件</a-menu-item>
+        <a-menu-item key="/my-files"><template #icon><icon-folder /></template>我的文件</a-menu-item>
         <a-menu-item key="/shares"><template #icon><icon-share-internal /></template>共享</a-menu-item>
-  <a-menu-item key="/ai"><template #icon><icon-eye /></template>AI 实验室</a-menu-item>
+        <a-menu-item key="/ai"><template #icon><icon-eye /></template>AI 实验室</a-menu-item>
       </a-menu>
     </div>
 
@@ -28,10 +28,18 @@ const onClick = (key: string) => router.push(key)
       <p class="text-xs text-slate-500">支持上传/下载/分享；AI 功能通过任务队列模拟。</p>
     </div>
   </div>
-  
+
 </template>
 
 <style scoped>
-.arco-menu-item { border-radius: 0.5rem; margin-bottom: 0.25rem; }
-.arco-menu-selected, .arco-menu-item:hover { background-color: rgb(239 246 255); color: rgb(37 99 235); }
+.arco-menu-item {
+  border-radius: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.arco-menu-selected,
+.arco-menu-item:hover {
+  background-color: rgb(239 246 255);
+  color: rgb(37 99 235);
+}
 </style>

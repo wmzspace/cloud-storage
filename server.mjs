@@ -157,16 +157,22 @@ app.get('/api/stats/storage', (req, res) => {
   res.json(calcStorage());
 });
 
-// --- 静态 AI 统计 ---
-const aiFeatures = [
-  { name: '图像识别', count: 156, icon: '🔍' },
-  { name: '文字提取', count: 89, icon: '📝' },
-  { name: '语音转文字', count: 34, icon: '🗣️' },
-  { name: '内容审核', count: 12, icon: '🛡️' }
-];
-
+// --- AI 统计：根据任务队列动态汇总 ---
 app.get('/api/stats/ai', (req, res) => {
-  res.json(aiFeatures);
+  const mapping = [
+    { type: 'thumbnail', name: '图像缩略图', icon: '🖼️' },
+    { type: 'transcode', name: '视频转码', icon: '🎞️' },
+    { type: 'moderation', name: '图片审核', icon: '�️' },
+    { type: 'classification', name: '图片分类', icon: '🏷️' },
+    { type: 'ocr', name: '文字提取', icon: '�' },
+    { type: 'asr', name: '语音转文字', icon: '�️' }
+  ]
+  const result = mapping.map(m => ({
+    name: m.name,
+    icon: m.icon,
+    count: jobs.filter(j => j.type === m.type).length
+  }))
+  res.json(result)
 });
 
 // --- 简单任务队列（内存占位） ---

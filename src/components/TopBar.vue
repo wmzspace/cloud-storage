@@ -13,10 +13,10 @@ const onPick = async (e: Event) => {
   if (!f) return
   await filesApi.upload(f)
   Message.success('上传成功')
-  ;(e.target as HTMLInputElement).value = ''
-  router.push('/files')
+    ; (e.target as HTMLInputElement).value = ''
+  router.push('/my-files')
 }
-const goFiles = () => router.push({ path: '/files', query: { q: q.value } })
+const goFiles = () => router.push({ path: '/my-files', query: { q: q.value } })
 </script>
 
 <template>
@@ -33,5 +33,4 @@ const goFiles = () => router.push({ path: '/files', query: { q: q.value } })
   </div>
 </template>
 
-<style scoped>
-</style>
+<style scoped></style>
