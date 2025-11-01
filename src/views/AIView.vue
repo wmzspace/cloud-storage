@@ -286,21 +286,22 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
     </a-grid>
 
     <!-- 选择云盘文件弹窗 -->
-    <!-- 移除阻止确认的 on-before-ok（之前总是返回 false 导致确认按钮无反应） -->
-    <a-modal :visible="selectVisible" @ok="confirmSelect" @cancel="() => { selectVisible = false; selectedName = '' }"
-      :title="`选择文件 - ${typeText(selectType)}`">
-      <div class="mb-3 flex items-center">
-        <a-input v-model="fileQuery" placeholder="搜索文件名..." allow-clear style="width: 280px" />
-        <span class="text-xs text-slate-500 ml-2">类型限制：{{ typeToFileType[selectType] || '不限' }}</span>
+    <!-- 宽度增大到 900，视觉更宽松；同时保持最大宽度不超过视口 -->
+    <a-modal :visible="selectVisible" :width="900" :modal-style="{ maxWidth: '95vw' }" @ok="confirmSelect"
+      @cancel="() => { selectVisible = false; selectedName = '' }" :title="`选择文件 - ${typeText(selectType)}`">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <a-input v-model="fileQuery" placeholder="搜索文件名..." allow-clear class="flex-1" />
+        <span class="text-xs text-slate-500 shrink-0">类型限制：{{ typeToFileType[selectType] || '不限' }}</span>
       </div>
-      <!-- 高亮已选行，简化样式使弹窗更整洁 -->
+      <!-- 高亮已选行，简化样式使弹窗更整洁；给列设置合理宽度，避免文字换行变形（如 image 被断行） -->
       <a-table :loading="selectLoading" :data="selectableFiles" row-key="name" :pagination="false" :columns="[
-        { title: '名称', dataIndex: 'name' },
-        { title: '类型', dataIndex: 'type' },
-        { title: '大小', dataIndex: 'size' },
-        { title: '时间', dataIndex: 'date' },
+        { title: '名称', dataIndex: 'name', ellipsis: true },
+        { title: '类型', dataIndex: 'type', width: 100 },
+        { title: '大小', dataIndex: 'size', width: 100 },
+        { title: '时间', dataIndex: 'date', width: 140 },
         { title: '选择', slotName: 'pick', width: 100, align: 'center' }
-      ]" :row-class-name="(record: any) => record.name === selectedName ? 'bg-selected-row' : ''">
+      ]" :row-class-name="(record: any) => record.name === selectedName ? 'bg-selected-row' : ''"
+        :scroll="{ y: 420 }">
         <template #pick="{ record }">
           <a-radio v-model="selectedName" :value="record.name">选择</a-radio>
         </template>
